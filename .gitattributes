@@ -19,6 +19,7 @@
 
 # Compressed archives
 *.zip   binary
+*.jar   binary
 *.tar   binary
 *.gz    binary
 *.tgz   binary

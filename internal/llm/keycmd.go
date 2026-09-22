@@ -31,32 +31,16 @@ const keyCmdMaxOutput = 64 << 10
 // reaches the caller: cappedBuffer.overflow is what produces the error message.
 var errKeyCmdOutputTooLarge = errors.New("credential command output exceeds cap")
 
-// suspiciousPatterns matches shell constructs that are never legitimate in a
-// credential-helper invocation and almost certainly indicate config tampering
-// or an accidental shell compound command. The list is intentionally narrow:
-// each entry must have zero plausible false-positives in real credential
-// commands (op, aws, pass, 1Password, keychain, etc.).
-//
-// Patterns deliberately NOT included:
-//   - Command separators (;, &&, ||, &): rejected in the original draft but
-//     removed because existing tests and documented usage include them
-//     (e.g. "sleep 30 2>/dev/null & printf tok", "read -r x; printf %s \"$x\"").
-//   - Shell redirections (>, 2>, >>): also rejected in the original draft but
-//     "2>/dev/null" and "2>nul" are idiomatic in helpers that suppress stderr,
-//     so matching \d*>>?\s*\S causes false positives on every such command.
-//
-// This is defence-in-depth only. api_key_cmd is explicitly designed to run
-// arbitrary commands from the user's own config file, so a determined user can
-// always bypass these checks. The goal is to surface accidental
-// misconfigurations, not to sandbox the shell.
+// suspiciousPatterns matches shell constructs that never appear in a legitimate
+// credential-helper invocation (op, aws, pass, keychain, ...) and so signal
+// config tampering or an accidental compound command. This is defence-in-depth,
+// not a sandbox: api_key_cmd runs arbitrary user config by design, so the goal
+// is only to surface accidental misconfiguration. Command separators (; && || &)
+// and redirections (2>/dev/null) are intentionally omitted -- they appear in
+// documented, tested helper commands and would produce false positives.
 var suspiciousPatterns = []*regexp.Regexp{
-	// Backtick command substitution: `cmd` or `cmd arg`.
-	// Legitimate credential helpers (op, aws, pass, keychain) never contain
-	// backticks; a backtick always means command substitution.
-	regexp.MustCompile("`"),
-	// Embedded null bytes: \x00 is never part of a command name or argument
-	// and is a common injection primitive.
-	regexp.MustCompile(`\x00`),
+	regexp.MustCompile("`"),    // backtick command substitution
+	regexp.MustCompile(`\x00`), // embedded NUL byte
 }
 
 // validateKeyCmd returns an error when cmd contains patterns that are almost

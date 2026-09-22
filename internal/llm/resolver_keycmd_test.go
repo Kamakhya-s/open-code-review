@@ -442,3 +442,81 @@ func TestResolveEndpoint_LegacyIncompleteDoesNotRunCmd(t *testing.T) {
 		t.Errorf("expected fall-through no-endpoint error, got: %v", err)
 	}
 }
+
+// (p1) a static api_key with no api_key_cmd nudges the user toward a secret
+// manager. The key is still accepted; the warning is advisory only.
+func TestResolveEndpoint_ProviderStaticKeyWarnsPlaintext(t *testing.T) {
+	clearAllEnv(t)
+	cfgPath := writeConfigJSON(t, configFile{
+		Provider: "anthropic",
+		Providers: map[string]providerEntryConfig{
+			"anthropic": {APIKey: "sk-static", Model: "claude-sonnet-4-6"},
+		},
+	})
+	var ep ResolvedEndpoint
+	var err error
+	stderr := captureStderr(t, func() {
+		ep, err = ResolveEndpoint(cfgPath)
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ep.Token != "sk-static" {
+		t.Errorf("Token = %q, want %q", ep.Token, "sk-static")
+	}
+	want := `provider "anthropic" has a static api_key stored in the config file`
+	if !strings.Contains(stderr, want) {
+		t.Errorf("stderr %q does not contain warning %q", stderr, want)
+	}
+}
+
+// (p2) when api_key_cmd is also configured the user already has a secret-manager
+// path, so the plaintext nudge is suppressed and only the both-set warning fires
+// -- one warning per field, not two.
+func TestResolveEndpoint_BothSetOmitsPlaintextWarning(t *testing.T) {
+	clearAllEnv(t)
+	cfgPath := writeConfigJSON(t, configFile{
+		Provider: "anthropic",
+		Providers: map[string]providerEntryConfig{
+			"anthropic": {APIKey: "sk-static", APIKeyCmd: "printf 'sk-from-cmd\\n'", Model: "claude-sonnet-4-6"},
+		},
+	})
+	stderr := captureStderr(t, func() {
+		if _, err := ResolveEndpoint(cfgPath); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	if !strings.Contains(stderr, "has both api_key and api_key_cmd set") {
+		t.Errorf("stderr %q missing both-set warning", stderr)
+	}
+	if strings.Contains(stderr, "has a static api_key stored in the config file") {
+		t.Errorf("plaintext warning should be suppressed when api_key_cmd is set; stderr %q", stderr)
+	}
+}
+
+// (p3) legacy path: a static auth_token with no auth_token_cmd warns as well.
+func TestResolveEndpoint_LegacyStaticTokenWarnsPlaintext(t *testing.T) {
+	clearAllEnv(t)
+	cfgPath := writeConfigJSON(t, configFile{
+		Llm: llmFileConfig{
+			URL:       "https://api.example.com/v1/messages",
+			AuthToken: "legacy-static",
+			Model:     "claude-sonnet-4-6",
+		},
+	})
+	var ep ResolvedEndpoint
+	var err error
+	stderr := captureStderr(t, func() {
+		ep, err = ResolveEndpoint(cfgPath)
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ep.Token != "legacy-static" {
+		t.Errorf("Token = %q, want %q", ep.Token, "legacy-static")
+	}
+	want := "llm config has a static auth_token stored in the config file"
+	if !strings.Contains(stderr, want) {
+		t.Errorf("stderr %q does not contain warning %q", stderr, want)
+	}
+}

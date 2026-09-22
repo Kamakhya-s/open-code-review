@@ -416,14 +416,6 @@ func tryProviderConfig(cfg configFile, modelOverride string) (ResolvedEndpoint, 
 		// so a config that keeps api_key_cmd as a deliberate fallback still works.
 		if apiKeyCmd != "" {
 			fmt.Fprintf(os.Stderr, "[ocr] WARNING: provider %q has both api_key and api_key_cmd set; using the static api_key\n", cfg.Provider)
-		} else {
-			// Nudge toward api_key_cmd only when no command is configured: a static
-			// key in plain JSON is readable by any process that can read the file and
-			// leaks into backups and editor history. Skipped when api_key_cmd is set
-			// so the config already has a secret-manager path and needs no second
-			// warning for the same field.
-			fmt.Fprintf(os.Stderr, "[ocr] WARNING: provider %q has a static api_key stored in the config file; "+
-				"consider using api_key_cmd to read the credential from a secret manager\n", cfg.Provider)
 		}
 	case apiKeyCmd == "" && isPreset && preset.EnvVar != "":
 		// Env var is the last resort: only when neither api_key nor api_key_cmd
@@ -631,15 +623,8 @@ func tryLegacyLlmConfig(cfg configFile, modelOverride string) (ResolvedEndpoint,
 	}
 	// Static auth_token always wins; warn if a command is also set. The command
 	// itself runs only just before returning, after the validation below.
-	if token != "" {
-		if tokenCmd != "" {
-			fmt.Fprintln(os.Stderr, "[ocr] WARNING: llm config has both auth_token and auth_token_cmd set; using the static auth_token")
-		} else {
-			// Nudge toward auth_token_cmd only when no command is configured; see the
-			// api_key warning in tryProviderConfig for the rationale.
-			fmt.Fprintln(os.Stderr, "[ocr] WARNING: llm config has a static auth_token stored in the config file; "+
-				"consider using auth_token_cmd to read the credential from a secret manager")
-		}
+	if token != "" && tokenCmd != "" {
+		fmt.Fprintln(os.Stderr, "[ocr] WARNING: llm config has both auth_token and auth_token_cmd set; using the static auth_token")
 	}
 
 	// llm.protocol (normalized) wins over use_anthropic when set.
